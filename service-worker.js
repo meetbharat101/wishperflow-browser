@@ -1,152 +1,168 @@
-// Service Worker - VibeCoding Extension
 console.log('SW Loaded');
 
-// Offscreen document path
 const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
+let recordingState = false;
 
-// Check if offscreen document already exists
 async function hasOffscreenDocument() {
   const matchedClients = await clients.matchAll();
-  for (const client of matchedClients) {
-    if (client.url.endsWith(OFFSCREEN_DOCUMENT_PATH)) {
-      return true;
-    }
-  }
-  return false;
+  return matchedClients.some(c => c.url.endsWith(OFFSCREEN_DOCUMENT_PATH));
 }
 
-// Close existing offscreen document
-async function closeOffscreenDocument() {
-  if (await hasOffscreenDocument()) {
-    console.log('Closing existing offscreen document');
-    await chrome.offscreen.closeDocument();
-  }
-}
-
-// Create offscreen document for AI processing
 async function setupOffscreenDocument() {
-  if (await hasOffscreenDocument()) {
-    console.log('Offscreen document already exists');
-    return;
-  }
+  if (await hasOffscreenDocument()) return;
 
   try {
     await chrome.offscreen.createDocument({
       url: OFFSCREEN_DOCUMENT_PATH,
       reasons: [chrome.offscreen.Reason.USER_MEDIA, chrome.offscreen.Reason.WORKERS],
-      justification: 'Capture microphone audio and run Whisper AI model for speech-to-text transcription'
+      justification: 'Microphone capture and Whisper AI transcription'
     });
-    console.log('Offscreen document created with USER_MEDIA + WORKERS');
+    console.log('Offscreen document created');
   } catch (error) {
-    console.error('Error creating offscreen document:', error);
+    console.error('Offscreen creation error:', error);
   }
 }
 
-// Recreate offscreen document with correct permissions (used on install/update)
-async function recreateOffscreenDocument() {
-  await closeOffscreenDocument();
-  await setupOffscreenDocument();
+async function openPermissionsPage() {
+  const url = chrome.runtime.getURL('permissions.html');
+  const existing = await chrome.tabs.query({ url });
+  if (existing.length > 0) {
+    await chrome.tabs.update(existing[0].id, { active: true });
+    await chrome.windows.update(existing[0].windowId, { focused: true });
+    return;
+  }
+  await chrome.tabs.create({ url });
 }
 
-// Initialize offscreen document on install
+async function injectContentScript(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content.js']
+    });
+  } catch (e) {
+    console.warn('Content script injection failed:', e.message);
+  }
+}
+
+async function insertTextIntoActiveTab(text) {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+
+    await injectContentScript(tab.id);
+    await chrome.tabs.sendMessage(tab.id, { type: 'INSERT_TEXT', payload: text });
+  } catch (e) {
+    console.warn('Insert text failed:', e.message);
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('Extension installed - recreating offscreen document with correct permissions');
-  recreateOffscreenDocument();
+  console.log('Extension installed');
+  setupOffscreenDocument();
+  chrome.storage.local.set({ recording: false, autoPaste: false });
 });
 
-// Also setup on startup (in case SW was killed)
 chrome.runtime.onStartup.addListener(() => {
-  console.log('Extension started - setting up offscreen document');
   setupOffscreenDocument();
 });
 
-// Open permissions page in a new tab
-async function openPermissionsPage() {
-  const permissionsUrl = chrome.runtime.getURL('permissions.html');
-  
-  // Check if permissions page is already open
-  const existingTabs = await chrome.tabs.query({ url: permissionsUrl });
-  if (existingTabs.length > 0) {
-    // Focus existing tab
-    await chrome.tabs.update(existingTabs[0].id, { active: true });
-    await chrome.windows.update(existingTabs[0].windowId, { focused: true });
-    return;
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command !== 'toggle-recording') return;
+
+  await setupOffscreenDocument();
+  const { recording } = await chrome.storage.local.get('recording');
+
+  if (recording) {
+    const response = await chrome.runtime.sendMessage({ type: 'OFFSCREEN_STOP_RECORDING' });
+    recordingState = false;
+    await chrome.storage.local.set({ recording: false });
+    console.log('Shortcut: stopped recording', response);
+  } else {
+    const response = await chrome.runtime.sendMessage({ type: 'OFFSCREEN_START_RECORDING' });
+    if (response?.success) {
+      recordingState = true;
+      await chrome.storage.local.set({ recording: true });
+      console.log('Shortcut: started recording');
+    } else if (response?.message?.includes('Permission') || response?.message?.includes('NotAllowed')) {
+      await openPermissionsPage();
+    }
   }
-  
-  // Open new tab
-  await chrome.tabs.create({ url: permissionsUrl });
-}
+});
 
-// Message handler - Routes messages between Popup and Offscreen
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('SW received message:', message.type, 'from:', sender.url || 'extension');
+  console.log('SW received:', message.type);
 
-  // Handle messages based on type
   switch (message.type) {
     case 'PING':
       handlePing(sendResponse);
-      return true; // Keep channel open for async response
+      return true;
 
     case 'START_RECORDING':
       handleStartRecording(sendResponse);
-      return true; // Keep channel open for async response
+      return true;
 
     case 'STOP_RECORDING':
       handleStopRecording(sendResponse);
-      return true; // Keep channel open for async response
+      return true;
+
+    case 'GET_STATE':
+      chrome.storage.local.get(['recording', 'autoPaste', 'lastResult']).then(sendResponse);
+      return true;
+
+    case 'SET_AUTO_PASTE':
+      chrome.storage.local.set({ autoPaste: message.payload });
+      sendResponse({ success: true });
+      return true;
+
+    case 'INSERT_TEXT_ACTIVE':
+      insertTextIntoActiveTab(message.payload).then(() => sendResponse({ success: true }));
+      return true;
+
+    case 'LOAD_MODEL':
+      handleLoadModel(sendResponse);
+      return true;
 
     case 'MIC_PERMISSION_GRANTED':
-      console.log('Microphone permission granted by user');
       sendResponse({ success: true });
       return true;
 
     case 'REQUEST_MIC_PERMISSION':
-      openPermissionsPage().then(() => {
-        sendResponse({ success: true, message: 'Permissions page opened' });
-      });
+      openPermissionsPage().then(() => sendResponse({ success: true }));
       return true;
 
-    case 'OFFSCREEN_PONG':
-      // Response from offscreen (handled via the forwarding promise)
-      console.log('SW received PONG from Offscreen');
-      break;
+    case 'TRANSCRIPTION_RESULT':
+      handleTranscriptionResult(message.payload);
+      return false;
+
+    case 'TRANSCRIPTION_STATUS':
+    case 'MODEL_STATUS':
+      return false;
 
     default:
-      console.log('Unknown message type:', message.type);
+      return false;
   }
 });
 
-// Forward PING to offscreen and get response
 async function handlePing(sendResponse) {
   try {
-    // Ensure offscreen document exists
     await setupOffscreenDocument();
-
-    // Forward to offscreen
-    console.log('SW forwarding PING to Offscreen');
     const response = await chrome.runtime.sendMessage({ type: 'PING_OFFSCREEN' });
-    console.log('SW got response from Offscreen:', response);
-
-    sendResponse({ message: 'Pong! (via SW → Offscreen → SW)' });
+    sendResponse({ message: 'Pong! (SW -> Offscreen -> SW)' });
   } catch (error) {
-    console.error('Error in handlePing:', error);
     sendResponse({ message: `Error: ${error.message}` });
   }
 }
 
-// Forward START_RECORDING to offscreen
 async function handleStartRecording(sendResponse) {
   try {
-    // Ensure offscreen document exists
     await setupOffscreenDocument();
-
-    console.log('SW forwarding START_RECORDING to Offscreen');
     const response = await chrome.runtime.sendMessage({ type: 'OFFSCREEN_START_RECORDING' });
-    console.log('SW got response from Offscreen:', response);
 
-    // If permission was denied, open the permissions page
-    if (!response.success && response.message.includes('Permission')) {
-      console.log('Microphone permission needed, opening permissions page');
+    if (response?.success) {
+      recordingState = true;
+      await chrome.storage.local.set({ recording: true });
+    } else if (response?.message?.includes('Permission') || response?.message?.includes('NotAllowed')) {
       await openPermissionsPage();
       sendResponse({ success: false, message: 'Please grant microphone permission in the opened tab, then try again.' });
       return;
@@ -154,21 +170,38 @@ async function handleStartRecording(sendResponse) {
 
     sendResponse(response);
   } catch (error) {
-    console.error('Error in handleStartRecording:', error);
     sendResponse({ success: false, message: error.message });
   }
 }
 
-// Forward STOP_RECORDING to offscreen
 async function handleStopRecording(sendResponse) {
   try {
-    console.log('SW forwarding STOP_RECORDING to Offscreen');
     const response = await chrome.runtime.sendMessage({ type: 'OFFSCREEN_STOP_RECORDING' });
-    console.log('SW got response from Offscreen:', response);
-
+    recordingState = false;
+    await chrome.storage.local.set({ recording: false });
     sendResponse(response);
   } catch (error) {
-    console.error('Error in handleStopRecording:', error);
     sendResponse({ success: false, message: error.message });
+  }
+}
+
+async function handleLoadModel(sendResponse) {
+  try {
+    await setupOffscreenDocument();
+    const response = await chrome.runtime.sendMessage({ type: 'OFFSCREEN_LOAD_MODEL' });
+    sendResponse(response);
+  } catch (error) {
+    sendResponse({ success: false, message: error.message });
+  }
+}
+
+async function handleTranscriptionResult(payload) {
+  await chrome.storage.local.set({ lastResult: payload });
+
+  if (payload.success) {
+    const { autoPaste } = await chrome.storage.local.get('autoPaste');
+    if (autoPaste) {
+      await insertTextIntoActiveTab(payload.formatted);
+    }
   }
 }
