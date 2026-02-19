@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "VibeCoding Extension",
+  "version": "0.0.1",
+  "description": "Voice-to-Text for any text input on the web using local AI.",
+  "permissions": [
+    "offscreen",
+    "activeTab",
+    "scripting"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}

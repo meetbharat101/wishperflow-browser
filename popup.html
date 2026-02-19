@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeCoding</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 16px;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    button {
+      padding: 8px 16px;
+      margin: 8px 0;
+      cursor: pointer;
+    }
+    #status {
+      margin-top: 12px;
+      padding: 8px;
+      background: #f0f0f0;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>VibeCoding</h1>
+  <button id="pingBtn">Ping</button>
+  <div style="margin-top: 16px;">
+    <button id="recordBtn">🎤 Record</button>
+    <button id="stopBtn" disabled>⏹ Stop</button>
+  </div>
+  <div id="status">Ready</div>
+  <script src="popup.js"></script>
+</body>
+</html>
