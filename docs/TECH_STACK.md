@@ -3,24 +3,37 @@
 ## Core Technologies
 -   **Runtime:** Chrome Extension Manifest V3
 -   **Language:** Vanilla JavaScript (ES2022 Modules)
--   **Build Tooling:** None (Raw / Native support) *or* minimal Vite for testing only.
+-   **Build Tooling:** None -- raw vanilla JS. Dependencies copied from `node_modules` via `npm run setup`.
 
 ## AI & ML
--   **Library:** [Transformers.js](https://huggingface.co/docs/transformers.js) (v2.x or v3.x alpha)
-    -   *Why:* Runs PyTorch models directly in the browser via WASM/WebGPU.
--   **Model:** `Xenova/whisper-tiny`
-    -   *Why:* ~40MB size. Runs on almost any CPU. Good enough for simple dictation.
-    -   *Fallback:* `int8` quantization is mandatory for speed.
+-   **Library:** [Transformers.js](https://huggingface.co/docs/transformers.js) v2.17
+    -   *Why:* Runs ONNX models directly in the browser via WASM.
+-   **Model:** `Xenova/whisper-tiny` (quantized, ~40MB)
+    -   *Why:* Small enough for in-browser use. Good accuracy for dictation.
+    -   *Quantization:* int8 via `quantized: true` flag for speed.
+-   **Runtime:** ONNX Runtime Web (WASM backend, bundled with Transformers.js)
 
-## Audio & Permissions
-- **Capture Location:** Audio is captured in a visible permissions page (`permissions.html`) and handled in the offscreen document (`offscreen.js`). Popups cannot reliably request `getUserMedia`.
-- **Offscreen Reason:** `chrome.offscreen.createDocument` is created with `USER_MEDIA` and `WORKERS` reasons so `offscreen.js` can access the microphone and host heavy model work.
-- **Message Protocol:** `popup.js` → `service-worker.js` → `offscreen.js` using explicit `OFFSCREEN_` prefixed messages to avoid broadcast collisions.
+## Audio Pipeline
+- **Capture:** `navigator.mediaDevices.getUserMedia()` in the offscreen document
+- **Recording:** `MediaRecorder` with `audio/webm;codecs=opus` format
+- **Decoding:** `AudioContext.decodeAudioData()` to convert webm to raw PCM
+- **Resampling:** Linear interpolation to 16kHz mono `Float32Array` for Whisper input
+- **Offscreen Reason:** `chrome.offscreen.createDocument` with `USER_MEDIA` + `WORKERS` reasons
+
+## Text Processing
+- **Formatting:** Regex-based engine (`lib/formatter.js`)
+  - Capitalize first letter and after sentence endings
+  - Remove filler words (um, uh, er, ah, like you know)
+  - Fix punctuation spacing and add trailing period
+- **Injection:** `document.execCommand('insertText')` + direct value manipulation for input/textarea
+
+## Message Protocol
+- `popup.js` → `service-worker.js` → `offscreen.js` using `OFFSCREEN_` prefixed message types
+- Broadcast messages (`MODEL_STATUS`, `TRANSCRIPTION_RESULT`) received by all extension contexts
 
 ## State & Storage
--   **Persistence:** `chrome.storage.local`
--   **Messaging:** `chrome.runtime.sendMessage` (One-time requests)
+-   **Persistence:** `chrome.storage.local` (recording state, auto-paste preference, last result)
+-   **Messaging:** `chrome.runtime.sendMessage` (one-time requests with async response)
 
-## Testing
--   **Framework:** `Vitest`
--   **Environment:** `JSDOM` (for simulating UI interactions in tests)
+## Keyboard Shortcut
+- `Alt+Shift+R` to toggle recording from any tab (via `chrome.commands` API)

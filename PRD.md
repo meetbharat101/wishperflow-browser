@@ -1,7 +1,7 @@
-# Product Requirements Document (PRD) - VibeCoding Extension
+# Product Requirements Document (PRD) - WhisperFlow
 
 ## 1. Product Statement
-The **VibeCoding Extension** is a private, offline-first Chrome extension that enables "Voice-to-Text" for any text input on the web. Unlike standard dictation, it uses a state-of-the-art **Local AI Model (Whisper)** to transcribe speech accurately and applies smart formatting to make the text "ready to send" immediately.
+**WhisperFlow** is a private, offline-first Chrome extension that enables "Voice-to-Text" for any text input on the web. Unlike standard dictation, it uses a state-of-the-art **Local AI Model (Whisper)** to transcribe speech accurately and applies smart formatting to make the text "ready to send" immediately.
 
 ## 2. The "Why" (Mistakes Avoided)
 *Based on previous iterations, we identified three critical failures to avoid:*
