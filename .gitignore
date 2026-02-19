@@ -1,0 +1,8 @@
+node_modules/
+package-lock.json
+*.log
+
+# WASM and lib files are copied from node_modules during setup
+lib/transformers.min.js
+lib/transformers.min.js.map
+lib/ort-wasm*.wasm

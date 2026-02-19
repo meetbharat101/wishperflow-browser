@@ -1,0 +1,13 @@
+{
+  "name": "whisperflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Universal voice-to-text Chrome extension using local Whisper AI",
+  "scripts": {
+    "setup": "npm install && npm run copy-deps",
+    "copy-deps": "node -e \"const fs=require('fs'),p='node_modules/@xenova/transformers/dist/';['transformers.min.js','ort-wasm-simd.wasm','ort-wasm-simd-threaded.wasm','ort-wasm.wasm','ort-wasm-threaded.wasm'].forEach(f=>fs.copyFileSync(p+f,'lib/'+f));console.log('Dependencies copied to lib/')\""
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2"
+  }
+}
