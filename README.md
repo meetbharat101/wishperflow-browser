@@ -1,4 +1,4 @@
-# WhisperFlow
+# WhisperFlow V2
 
 **Universal voice-to-text for any web input using local Whisper AI.**
 
